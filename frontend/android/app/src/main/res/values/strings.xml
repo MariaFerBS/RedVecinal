@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RedVecinal</string>
+    <string name="title_activity_main">RedVecinal</string>
+    <string name="package_name">com.redvecinal.app</string>
+    <string name="custom_url_scheme">com.redvecinal.app</string>
+</resources>

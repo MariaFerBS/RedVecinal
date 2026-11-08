@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+/* Asegurar que Leaflet no se superponga a los modales ni al Navbar */
+.leaflet-container {
+  z-index: 10 !important;
+  font-family: inherit;
+}
