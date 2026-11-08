@@ -108,8 +108,14 @@ export const AuthProvider = ({ children }) => {
 
   const fetchPosts = async (params = {}) => {
     try {
-      const res = await axios.get(`${apiUrl}/posts`, { params });
-      if (Array.isArray(res.data) && res.data.length > 0) {
+      const coords = user?.ubicacion?.coordinates;
+      const queryParams = {
+        ...params,
+        ...(coords ? { lng: coords[0], lat: coords[1] } : {})
+      };
+
+      const res = await axios.get(`${apiUrl}/posts`, { params: queryParams });
+      if (Array.isArray(res.data)) {
         setPosts(res.data);
         localStorage.setItem('rv_posts_cache', JSON.stringify(res.data));
       }

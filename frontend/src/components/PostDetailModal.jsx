@@ -64,8 +64,8 @@ const PostDetailModal = ({
         ).toFixed(1)
       : '5.0';
 
-  const lng = currentPost.ubicacion?.coordinates?.[0] || -77.0428;
-  const lat = currentPost.ubicacion?.coordinates?.[1] || -12.0464;
+  const lng = currentPost.ubicacion?.coordinates?.[0] ?? -77.1186;
+  const lat = currentPost.ubicacion?.coordinates?.[1] ?? -12.0565;
 
   const formattedDate = currentPost.createdAt
     ? new Date(currentPost.createdAt).toLocaleDateString('es-PE', {
@@ -188,7 +188,7 @@ const PostDetailModal = ({
                 <span>Ubicación en el Barrio (Radio menor a 500m)</span>
               </h3>
               <span className="text-xs font-semibold text-emerald-700">
-                {currentPost.autor?.barrio || 'Santa Beatriz'}
+                {currentPost.autor?.barrio || currentPost.autor?.ciudad || 'Mi Barrio'}
               </span>
             </div>
 
@@ -335,7 +335,7 @@ const PostDetailModal = ({
                         <span className="font-bold text-xs text-slate-900">
                           {c.autorNombre || 'Vecino'}{' '}
                           <span className="font-normal text-slate-500">
-                            • {c.autorBarrio || 'Santa Beatriz'}
+                            • {c.autorBarrio || 'Vecino del Barrio'}
                           </span>
                         </span>
                         <div className="flex items-center gap-0.5">
