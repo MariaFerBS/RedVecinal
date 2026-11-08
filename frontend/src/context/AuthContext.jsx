@@ -79,6 +79,43 @@ export const AuthProvider = ({ children }) => {
     fetchPosts();
   }, [user]);
 
+  // Solicitar GPS automáticamente al cargar la aplicación
+    useEffect(() => {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            console.log('📍 GPS real detectado:', latitude, longitude);
+
+            // 1. Si hay un usuario logueado, le asignamos sus coordenadas reales
+            setUser((prevUser) => {
+              if (!prevUser) return prevUser;
+              const updatedUser = {
+                ...prevUser,
+                ubicacion: {
+                  type: 'Point',
+                  coordinates: [longitude, latitude] // [lng, lat] para GeoJSON
+                }
+              };
+              localStorage.setItem('rv_user', JSON.stringify(updatedUser));
+              return updatedUser;
+            });
+
+            // 2. Consultar las publicaciones cercanas usando ese GPS
+            fetchPosts({ lat: latitude, lng: longitude });
+          },
+          (error) => {
+            console.warn('No se autorizó o no se obtuvo el GPS:', error.message);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      }
+    }, []);
+
   const login = async (email, password) => {
     setLoading(true);
     try {

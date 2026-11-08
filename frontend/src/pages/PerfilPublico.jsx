@@ -142,6 +142,32 @@ const PerfilPublico = () => {
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3500);
     }
+
+    const obtenerUbicacionGPS = () => {
+        if (!navigator.geolocation) {
+            alert('Tu navegador no cuenta con soporte para GPS.');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+            const { latitude, longitude } = position.coords;
+            
+            // Actualizas el formulario local del perfil
+            setFormData((prev) => ({
+                ...prev,
+                lat: latitude,
+                lng: longitude
+            }));
+
+            alert('¡Coordenadas GPS obtenidas con éxito!');
+            },
+            (err) => {
+            alert('Debes permitir el acceso a la ubicación en tu navegador: ' + err.message);
+            },
+            { enableHighAccuracy: true }
+        );
+        };
   };
 
   return (
@@ -236,6 +262,14 @@ const PerfilPublico = () => {
               >
                 {profile.bio}
               </p>
+
+              <button
+                type="button"
+                onClick={obtenerUbicacionGPS}
+                className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                >
+                📍 Usar mi ubicación GPS actual
+                </button>
             </div>
           </div>
 
