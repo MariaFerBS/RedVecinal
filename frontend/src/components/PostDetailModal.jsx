@@ -15,7 +15,8 @@ import {
   Star,
   Send,
   MessageSquare,
-  HeartHandshake
+  HeartHandshake,
+  Navigation
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -30,23 +31,45 @@ L.Icon.Default.mergeOptions({
 
 const detailPinIcon = L.divIcon({
   className: 'custom-detail-pin',
-  html: `<div style="background-color:#059669;width:30px;height:30px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:14px;">📍</div>`,
-  iconSize: [30, 30],
-  iconAnchor: [15, 30],
-  popupAnchor: [0, -28]
+  html: `<div style="background-color:#059669;width:32px;height:32px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:15px;">📍</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -30]
 });
 
-// Componente para reubicar la vista del mapa cuando cambien las coordenadas
+// Componente para recentrar y redimensionar el mapa sin parpadeos grises
 function RecenterMap({ lat, lng }) {
   const map = useMap();
   useEffect(() => {
     if (lat && lng) {
-      map.setView([lat, lng], 16);
-      map.invalidateSize();
+      // Pequeño timeout para que el modal termine su transición CSS
+      const timer = setTimeout(() => {
+        map.invalidateSize();
+        map.setView([lat, lng], 16);
+      }, 150);
+      return () => clearTimeout(timer);
     }
   }, [lat, lng, map]);
   return null;
 }
+
+// Función Haversine para mostrar distancia en el modal
+const calcularDistanciaTexto = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371e3;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) *
+      Math.cos(lat2 * rad) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const metros = Math.round(R * c);
+  return metros < 1000 ? `a ${metros} m de ti` : `a ${(metros / 1000).toFixed(1)} km de ti`;
+};
 
 const PostDetailModal = ({
   isOpen,
@@ -76,12 +99,16 @@ const PostDetailModal = ({
         ).toFixed(1)
       : '5.0';
 
-  // Coordenadas tomadas del post o de la ubicación del usuario
-  const fallbackLng = user?.ubicacion?.coordinates?.[0] ?? -77.1186;
-  const fallbackLat = user?.ubicacion?.coordinates?.[1] ?? -12.0565;
+  // Coordenadas del usuario activo (provenientes de AuthContext o caché)
+  const userLng = user?.ubicacion?.coordinates?.[0] ?? -77.1350;
+  const userLat = user?.ubicacion?.coordinates?.[1] ?? -12.0620;
 
-  const lng = currentPost.ubicacion?.coordinates?.[0] ?? fallbackLng;
-  const lat = currentPost.ubicacion?.coordinates?.[1] ?? fallbackLat;
+  // Coordenadas del Post
+  const lng = currentPost.ubicacion?.coordinates?.[0] ?? userLng;
+  const lat = currentPost.ubicacion?.coordinates?.[1] ?? userLat;
+
+  // Distancia calculada en tiempo real hacia la publicación
+  const distanciaCalculada = calcularDistanciaTexto(userLat, userLng, lat, lng);
 
   const formattedDate = currentPost.createdAt
     ? new Date(currentPost.createdAt).toLocaleDateString('es-PE', {
@@ -95,14 +122,23 @@ const PostDetailModal = ({
     e.preventDefault();
     if (!commentText.trim()) return;
 
-    setSubmitting(true);
-    await addCommentToPost(currentPost._id, {
-      estrellas: isSolidario ? 5 : rating,
-      texto: commentText
-    });
-    setCommentText('');
-    setRating(5);
-    setSubmitting(false);
+    try {
+      setSubmitting(true);
+      if (addCommentToPost) {
+        await addCommentToPost(currentPost._id, {
+          estrellas: isSolidario ? 5 : rating,
+          texto: commentText,
+          autorNombre: user ? `${user.nombre} ${user.apellido}` : 'Vecino',
+          autorBarrio: user?.barrio || 'Mi Barrio'
+        });
+      }
+      setCommentText('');
+      setRating(5);
+    } catch (err) {
+      console.error('Error al agregar comentario:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getBadgeStyle = (tipo) => {
@@ -161,15 +197,24 @@ const PostDetailModal = ({
           </button>
         </div>
 
-        {/* Contenido Scrolleable */}
+        {/* Contenido con Scroll */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
-          {/* Título y Precio */}
+          {/* Título, Precio y Distancia */}
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <span className="text-xs text-slate-500 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" />
-                Publicado: {formattedDate}
-              </span>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {formattedDate}
+                </span>
+                {distanciaCalculada && (
+                  <span className="font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Navigation className="w-3 h-3 text-emerald-600" />
+                    {distanciaCalculada}
+                  </span>
+                )}
+              </div>
+
               {currentPost.precio ? (
                 <span className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-black text-base">
                   S/ {currentPost.precio}.00
@@ -265,7 +310,7 @@ const PostDetailModal = ({
             </Link>
           </div>
 
-          {/* SECCIÓN CONDICIONAL: ESTRELLAS VS MENSAJES SOLIDARIOS */}
+          {/* Sección de Reseñas / Comentarios */}
           {!isSolidario ? (
             <div className="pt-4 border-t border-slate-200 space-y-4">
               <div className="flex items-center justify-between">
@@ -279,7 +324,7 @@ const PostDetailModal = ({
                 </div>
               </div>
 
-              {/* Formulario de estrellas y comentarios */}
+              {/* Formulario de Estrellas y Comentarios */}
               <form
                 onSubmit={handleCommentSubmit}
                 className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3"
@@ -328,15 +373,15 @@ const PostDetailModal = ({
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-sm transition"
+                    className="h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-sm transition disabled:opacity-50"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Comentar</span>
+                    <span>{submitting ? 'Enviando...' : 'Comentar'}</span>
                   </button>
                 </div>
               </form>
 
-              {/* Lista de Comentarios */}
+              {/* Lista de Reseñas */}
               {comentarios.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">
                   Aún no hay reseñas. ¡Sé el primer vecino en dejar tu calificación!
@@ -403,10 +448,10 @@ const PostDetailModal = ({
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="h-11 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-sm transition"
+                    className="h-11 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-sm transition disabled:opacity-50"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Enviar</span>
+                    <span>{submitting ? 'Enviando...' : 'Enviar'}</span>
                   </button>
                 </div>
               </form>
@@ -439,7 +484,7 @@ const PostDetailModal = ({
           )}
         </div>
 
-        {/* Pie del Modal con Acciones Directas */}
+        {/* Pie con Acciones Directas */}
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
           {onEndorse && (
             <button

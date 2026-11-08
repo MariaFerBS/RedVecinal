@@ -1,7 +1,9 @@
 const Alert = require('../models/Alert');
 
-const getAlerts = async (filters) => {
+const getAlerts = async (filters = {}) => {
   const { tipo, categoria, lat, lng, maxDistance = 5000 } = filters;
+  
+  // Solo devolver alertas activas
   const query = { activo: true };
 
   if (tipo && tipo !== 'Todas') {
@@ -43,18 +45,32 @@ const getAlerts = async (filters) => {
 };
 
 const createAlert = async (alertData, user) => {
-  const { tipo, categoria, titulo, descripcion, nombreContacto, lat, lng } =
-    alertData;
+  const { tipo, categoria, titulo, descripcion, nombreContacto } = alertData;
 
-  let coordinates = [-77.0428, -12.0464];
-  if (lng !== undefined && lat !== undefined) {
-    coordinates = [parseFloat(lng), parseFloat(lat)];
-  } else if (
-    user &&
-    user.ubicacion &&
-    Array.isArray(user.ubicacion.coordinates)
+  let coordinates = null;
+
+  // 1. PRIORIDAD: Si viene en alertData.ubicacion.coordinates [lng, lat] (como lo manda tu frontend)
+  if (
+    alertData.ubicacion &&
+    Array.isArray(alertData.ubicacion.coordinates) &&
+    alertData.ubicacion.coordinates.length === 2
   ) {
+    coordinates = [
+      parseFloat(alertData.ubicacion.coordinates[0]),
+      parseFloat(alertData.ubicacion.coordinates[1])
+    ];
+  }
+  // 2. Si viene como alertData.lat y alertData.lng
+  else if (alertData.lng !== undefined && alertData.lat !== undefined) {
+    coordinates = [parseFloat(alertData.lng), parseFloat(alertData.lat)];
+  }
+  // 3. Si no viene nada de lo anterior, recién recurre al usuario logueado
+  else if (user?.ubicacion?.coordinates && Array.isArray(user.ubicacion.coordinates)) {
     coordinates = user.ubicacion.coordinates;
+  }
+  // 4. Fallback final si no hay nada
+  else {
+    coordinates = [-77.1350, -12.0620];
   }
 
   const contactName = user
@@ -71,7 +87,8 @@ const createAlert = async (alertData, user) => {
     ubicacion: {
       type: 'Point',
       coordinates
-    }
+    },
+    activo: true
   });
 
   return await newAlert.populate(
@@ -80,11 +97,18 @@ const createAlert = async (alertData, user) => {
   );
 };
 
-const resolveAlert = async (alertId) => {
+const resolveAlert = async (alertId, user = null) => {
   const alert = await Alert.findById(alertId);
   if (!alert) {
     const error = new Error('Alerta no encontrada');
     error.statusCode = 404;
+    throw error;
+  }
+
+  // Validación de autor: solo el creador puede darla de baja
+  if (user && alert.autor && String(alert.autor) !== String(user._id)) {
+    const error = new Error('No tienes permiso para dar de baja esta alerta');
+    error.statusCode = 403;
     throw error;
   }
 
@@ -128,5 +152,3 @@ module.exports = {
   resolveAlert,
   confirmAlertIncident
 };
-
-

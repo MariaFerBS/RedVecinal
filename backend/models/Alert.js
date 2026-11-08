@@ -42,8 +42,8 @@ const alertSchema = new mongoose.Schema(
       },
       coordinates: {
         type: [Number],
-        required: true,
-        default: [-77.0428, -12.0464] // [Longitud, Latitud]
+        required: [true, 'Las coordenadas geográficas son obligatorias']
+        // Removido el default a Lima Centro para evitar falsear la ubicación
       }
     },
     activo: {
