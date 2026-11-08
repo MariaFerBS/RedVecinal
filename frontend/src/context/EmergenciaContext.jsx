@@ -61,7 +61,7 @@ export const EmergenciaProvider = ({ children }) => {
     return cached ? JSON.parse(cached) : INITIAL_DEMO_ALERTS;
   });
 
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
 
   useEffect(() => {
     localStorage.setItem('rv_emergency_mode', String(isEmergencyActive));

@@ -96,7 +96,7 @@ export const AuthProvider = ({ children }) => {
 
   const [loading, setLoading] = useState(false);
 
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
 
   useEffect(() => {
     if (user?.token) {
