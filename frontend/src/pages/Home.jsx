@@ -20,7 +20,33 @@ import { useEmergencia } from '../context/EmergenciaContext';
 import ChatModal from '../components/ChatModal';
 import PostDetailModal from '../components/PostDetailModal';
 
-// SUBCATEGORÍAS EN CASCADA SEGÚN EL TIPO ELEGIDO (Exclusivo para economía y favores cotidianos)
+// Función para calcular distancia real y retornar texto dinámico
+const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 'En tu zona';
+
+  const R = 6371e3; // Radio de la Tierra en metros
+  const rad = Math.PI / 180;
+
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) *
+      Math.cos(lat2 * rad) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const metros = Math.round(R * c);
+
+  if (metros < 1000) {
+    return `a ${metros} m`;
+  }
+  return `a ${(metros / 1000).toFixed(1)} km`;
+};
+
+// SUBCATEGORÍAS EN CASCADA SEGÚN EL TIPO ELEGIDO
 const SUBCATEGORIAS_MAP = {
   servicio: [
     'Gasfitería y Electricidad',
@@ -70,6 +96,10 @@ const Home = () => {
   const [activeChat, setActiveChat] = useState(null);
   const [selectedPostDetail, setSelectedPostDetail] = useState(null);
 
+  // Coordenadas actuales del usuario logueado
+  const userLat = user?.ubicacion?.coordinates?.[1];
+  const userLng = user?.ubicacion?.coordinates?.[0];
+
   const [newPost, setNewPost] = useState({
     tipo: 'servicio',
     categoria: SUBCATEGORIAS_MAP.servicio[0],
@@ -89,8 +119,7 @@ const Home = () => {
     });
   };
 
-  // FILTRO ESTRICTO: El Home SOLO muestra economía barrial, oficios, emprendimientos y favores cotidianos. 
-  // Excluimos cualquier mención a urgencias vitales, oxígeno o insulina para mantenerlas confinadas en el Panel SOS.
+  // FILTRO: Muestra publicaciones asegurando que no desaparezcan de la pantalla
   const filteredPosts = posts.filter((post) => {
     const textoCompleto = `${post.titulo} ${post.descripcion}`.toLowerCase();
     const esEmergenciaVital =
@@ -135,7 +164,7 @@ const Home = () => {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 pt-5 pb-24">
-      {/* Hero Contextual (Pantalla Normal / Verde) */}
+      {/* Hero Contextual */}
       <div
         className={`rounded-2xl p-4 sm:p-6 mb-6 border shadow-md transition-colors ${
           isEmergencyActive
@@ -148,13 +177,13 @@ const Home = () => {
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-sm">
               <MapPin className="w-3.5 h-3.5" />
               <span>
-                Barrio {user?.barrio || 'Santa Beatriz'} • Radio activo 500m
+                Barrio {user?.barrio || 'Mi Barrio'} • {user?.ciudad || 'Callao'}
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-black leading-tight break-words">
               {isEmergencyActive
                 ? '🚨 MODO EMERGENCIA ACTIVO EN TU BARRIO'
-                : `¡Hola, ${user?.nombre}! Conecta y apoya a tus vecinos`}
+                : `¡Hola, ${user?.nombre || 'Vecino'}! Conecta y apoya a tus vecinos`}
             </h1>
             <p className="text-xs sm:text-sm opacity-95 leading-relaxed">
               {isEmergencyActive
@@ -250,11 +279,11 @@ const Home = () => {
           }`}
         >
           <MapPin className="w-4 h-4" />
-          <span>Ver Mapa Interactivo (500m)</span>
+          <span>Ver Mapa Interactivo</span>
         </Link>
       </div>
 
-      {/* Grilla de Tarjetas Vecinales (Solo economía normal y favores cotidianos) */}
+      {/* Grilla de Tarjetas Vecinales */}
       {filteredPosts.length === 0 ? (
         <div
           className={`rounded-2xl p-8 text-center border ${
@@ -271,6 +300,19 @@ const Home = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPosts.map((post) => {
             const isSaved = savedPostIds.includes(post._id);
+
+            // Coordenadas del post
+            const postLng = post.ubicacion?.coordinates?.[0];
+            const postLat = post.ubicacion?.coordinates?.[1];
+
+            // Distancia calculada en tiempo real contra el GPS del usuario
+            const distanciaCalculada = calcularDistanciaReal(
+              userLat,
+              userLng,
+              postLat,
+              postLng
+            );
+
             return (
               <article
                 key={post._id}
@@ -344,11 +386,12 @@ const Home = () => {
                       )}
                     </span>
                     <span
-                      className={`text-xs flex items-center gap-1 ${
+                      className={`text-xs font-semibold flex items-center gap-1 ${
                         isEmergencyActive ? 'text-red-200' : 'text-slate-500'
                       }`}
                     >
-                      <MapPin className="w-3.5 h-3.5" />A menos de 300m
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                      {distanciaCalculada}
                     </span>
                   </div>
 
@@ -429,7 +472,7 @@ const Home = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-extrabold text-lg flex items-center gap-2">
                 <Layers className="w-5 h-5 text-emerald-600" />
-                <span>Nueva Publicación en {user?.barrio}</span>
+                <span>Nueva Publicación en {user?.barrio || 'el Barrio'}</span>
               </h3>
               <button
                 type="button"
@@ -490,7 +533,7 @@ const Home = () => {
                     setNewPost({ ...newPost, titulo: e.target.value })
                   }
                   className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm"
-                  placeholder="Ej. Venta de agua purificada y hielo en cubos"
+                  placeholder="Ej. Reparación de computadoras y redes"
                 />
               </div>
 

@@ -16,6 +16,32 @@ import { useEmergencia } from '../context/EmergenciaContext';
 import { useAuth } from '../context/AuthContext';
 import ChatModal from '../components/ChatModal';
 
+// Función para calcular distancia geográfica real
+const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 'En tu zona';
+
+  const R = 6371e3; // Radio de la Tierra en metros
+  const rad = Math.PI / 180;
+
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) *
+      Math.cos(lat2 * rad) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const metros = Math.round(R * c);
+
+  if (metros < 1000) {
+    return `a ${metros} m`;
+  }
+  return `a ${(metros / 1000).toFixed(1)} km`;
+};
+
 const ModoEmergencia = () => {
   const {
     isEmergencyActive,
@@ -32,6 +58,10 @@ const ModoEmergencia = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [chatNeighbor, setChatNeighbor] = useState(null);
+
+  // Coordenadas actuales del usuario logueado
+  const userLat = user?.ubicacion?.coordinates?.[1];
+  const userLng = user?.ubicacion?.coordinates?.[0];
 
   const [newAlert, setNewAlert] = useState({
     tipo: 'Necesito ayuda',
@@ -55,11 +85,16 @@ const ModoEmergencia = () => {
     e.preventDefault();
     if (!newAlert.titulo.trim() || !newAlert.descripcion.trim()) return;
 
+    // Enviar alerta con la ubicación del usuario
     await addAlert({
       ...newAlert,
       nombreContacto: user
         ? `${user.nombre} ${user.apellido}`
-        : 'Vecino del Barrio'
+        : 'Vecino del Barrio',
+      ubicacion: user?.ubicacion || {
+        type: 'Point',
+        coordinates: [-77.1350, -12.0620]
+      }
     });
 
     setNewAlert({
@@ -85,7 +120,7 @@ const ModoEmergencia = () => {
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-red-50/70 text-slate-900 pb-24">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-5">
-        {/* Cabecera de Mando con Fondo Rojo Pálido y Tarjeta Blanca */}
+        {/* Cabecera de Mando */}
         <div className="bg-white border-2 border-red-200 rounded-2xl p-4 sm:p-6 mb-6 shadow-md">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
@@ -194,12 +229,22 @@ const ModoEmergencia = () => {
           </button>
         </div>
 
-        {/* Grilla de Alertas con Fondo Rojo Pálido */}
+        {/* Grilla de Alertas */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredAlerts.map((alert) => {
             const isNeed = alert.tipo === 'Necesito ayuda';
-            const numConfirmaciones = alert.confirmacionesVecinos?.length || 1;
-            const umbralAlcanzado = numConfirmaciones >= 4 || alert.umbralAlcanzado;
+
+            // Coordenadas de la alerta
+            const alertLng = alert.ubicacion?.coordinates?.[0];
+            const alertLat = alert.ubicacion?.coordinates?.[1];
+
+            // Distancia calculada en tiempo real
+            const distanciaTexto = calcularDistanciaReal(
+              userLat,
+              userLng,
+              alertLat,
+              alertLng
+            );
 
             return (
               <article
@@ -220,9 +265,9 @@ const ModoEmergencia = () => {
                       {isNeed ? '🆘 NECESITO AYUDA' : '🤝 OFREZCO AYUDA'}
                     </span>
 
-                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      {alert.distancia || '150m'}
+                    <span className="text-xs font-bold text-slate-600 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
+                      <MapPin className="w-3.5 h-3.5 text-red-600" />
+                      {distanciaTexto}
                     </span>
                   </div>
 
@@ -233,7 +278,6 @@ const ModoEmergencia = () => {
                   <p className="text-sm text-slate-600 leading-relaxed mb-3 break-words">
                     {alert.descripcion}
                   </p>
-                  
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -249,7 +293,12 @@ const ModoEmergencia = () => {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedAlert(alert)}
+                    onClick={() =>
+                      setSelectedAlert({
+                        ...alert,
+                        distanciaCalculada: distanciaTexto
+                      })
+                    }
                     className="h-11 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs flex items-center gap-1.5 shrink-0 transition"
                   >
                     <Eye className="w-4 h-4" />
@@ -334,7 +383,7 @@ const ModoEmergencia = () => {
                   onChange={(e) =>
                     setNewAlert({ ...newAlert, titulo: e.target.value })
                   }
-                  placeholder="Ej. Necesito linterna o hielo para insulina"
+                  placeholder="Ej. Balón de oxígeno o tensiómetro urgente"
                   className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm"
                 />
               </div>
@@ -395,9 +444,12 @@ const ModoEmergencia = () => {
             </p>
 
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1 mb-5">
-              <p className="font-bold text-slate-900">Reportado por: {selectedAlert.nombreContacto}</p>
-              <p className="text-slate-600">
-                Distancia estimada: {selectedAlert.distancia || 'A menos de 200m'}
+              <p className="font-bold text-slate-900">
+                Reportado por: {selectedAlert.nombreContacto}
+              </p>
+              <p className="text-slate-600 flex items-center gap-1 font-semibold">
+                <MapPin className="w-3.5 h-3.5 text-red-600" />
+                <span>Distancia estimada: {selectedAlert.distanciaCalculada || 'Cerca de ti'}</span>
               </p>
             </div>
 
@@ -417,7 +469,7 @@ const ModoEmergencia = () => {
                   setChatNeighbor({
                     nombre: contactName,
                     apellido: '',
-                    barrio: user?.barrio || 'Santa Beatriz'
+                    barrio: user?.barrio || 'Mi Barrio'
                   });
                 }}
                 className="flex-1 h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2"
