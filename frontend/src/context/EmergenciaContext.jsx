@@ -13,7 +13,6 @@ export const EmergenciaProvider = ({ children }) => {
     if (!cached) return [];
     try {
       const parsed = JSON.parse(cached);
-      // Purgar si contiene alertas previas de prueba (alert_1, alert_2, alert_3)
       if (
         Array.isArray(parsed) &&
         parsed.some((a) => a._id === 'alert_1' || a._id === 'alert_2' || a._id === 'alert_3')
@@ -30,7 +29,6 @@ export const EmergenciaProvider = ({ children }) => {
 
   const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
 
-  // Limpieza defensiva en el montaje
   useEffect(() => {
     const cached = localStorage.getItem('rv_alerts_cache');
     if (cached && (cached.includes('alert_1') || cached.includes('Familia Vargas'))) {
@@ -43,9 +41,15 @@ export const EmergenciaProvider = ({ children }) => {
     localStorage.setItem('rv_emergency_mode', String(isEmergencyActive));
   }, [isEmergencyActive]);
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = async (coords = null) => {
     try {
-      const res = await axios.get(`${apiUrl}/alerts`);
+      const params = {};
+      if (coords && Array.isArray(coords) && coords.length === 2) {
+        params.lng = coords[0];
+        params.lat = coords[1];
+        params.maxDistance = 5000;
+      }
+      const res = await axios.get(`${apiUrl}/alerts`, { params });
       if (Array.isArray(res.data)) {
         setAlerts(res.data);
         localStorage.setItem('rv_alerts_cache', JSON.stringify(res.data));
@@ -71,22 +75,20 @@ export const EmergenciaProvider = ({ children }) => {
     localStorage.setItem('rv_emergency_mode', 'true');
   };
 
-  // Función para marcar como resuelta / desactivar una alerta
   const resolveAlert = async (alertId) => {
     try {
-      // Si tu backend tiene ruta PUT o PATCH para actualizar
-      await axios.patch(`${apiUrl}/alerts/${alertId}`, { activo: false });
+      await axios.patch(`${apiUrl}/alerts/${alertId}/resolve`);
     } catch (error) {
       console.warn('Actualizando localmente la alerta:', error.message);
     }
 
-    // Quitar la alerta del estado y de la caché para que desaparezca de inmediato
     const updated = alerts.filter((a) => a._id !== alertId);
     setAlerts(updated);
     localStorage.setItem('rv_alerts_cache', JSON.stringify(updated));
 
-    // Si ya no quedan alertas urgentes activas, apagar el modo SOS
-    const quedanUrgentes = updated.some((a) => a.tipo === 'Necesito ayuda' && a.activo !== false);
+    const quedanUrgentes = updated.some(
+      (a) => (a.tipo === 'Necesito ayuda' || a.tipo === 'sos') && a.activo !== false
+    );
     if (!quedanUrgentes) {
       setIsEmergencyActive(false);
       localStorage.setItem('rv_emergency_mode', 'false');

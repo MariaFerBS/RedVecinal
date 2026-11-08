@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-// Asegurar íconos de Leaflet en Vite
+// Solución a íconos por defecto de Leaflet en Vite
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -31,29 +31,33 @@ L.Icon.Default.mergeOptions({
 
 const detailPinIcon = L.divIcon({
   className: 'custom-detail-pin',
-  html: `<div style="background-color:#059669;width:32px;height:32px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:15px;">📍</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -30]
+  html: `<div style="background-color:#059669;width:34px;height:34px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:16px;">📍</div>`,
+  iconSize: [34, 34],
+  iconAnchor: [17, 34],
+  popupAnchor: [0, -32]
 });
 
-// Componente para recentrar y redimensionar el mapa sin parpadeos grises
-function RecenterMap({ lat, lng }) {
+// Componente para recentrar y forzar el repintado exacto dentro del modal
+function RecenterModalMap({ lat, lng }) {
   const map = useMap();
   useEffect(() => {
     if (lat && lng) {
-      // Pequeño timeout para que el modal termine su transición CSS
+      // Dos llamadas para evitar parpadeos grises mientras termina la animación del modal
+      map.invalidateSize();
+      map.setView([lat, lng], 16);
+
       const timer = setTimeout(() => {
         map.invalidateSize();
         map.setView([lat, lng], 16);
-      }, 150);
+      }, 200);
+
       return () => clearTimeout(timer);
     }
   }, [lat, lng, map]);
   return null;
 }
 
-// Función Haversine para mostrar distancia en el modal
+// Cálculo geodésico Haversine
 const calcularDistanciaTexto = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
   const R = 6371e3;
@@ -99,11 +103,11 @@ const PostDetailModal = ({
         ).toFixed(1)
       : '5.0';
 
-  // Coordenadas del usuario activo (provenientes de AuthContext o caché)
-  const userLng = user?.ubicacion?.coordinates?.[0] ?? -77.1350;
-  const userLat = user?.ubicacion?.coordinates?.[1] ?? -12.0620;
+  // Coordenadas del usuario activo con fallback a Huacho (Los Ángeles)
+  const userLng = user?.ubicacion?.coordinates?.[0] ?? -77.59595;
+  const userLat = user?.ubicacion?.coordinates?.[1] ?? -11.10408;
 
-  // Coordenadas del Post
+  // Coordenadas de la publicación seleccionada
   const lng = currentPost.ubicacion?.coordinates?.[0] ?? userLng;
   const lat = currentPost.ubicacion?.coordinates?.[1] ?? userLat;
 
@@ -129,7 +133,7 @@ const PostDetailModal = ({
           estrellas: isSolidario ? 5 : rating,
           texto: commentText,
           autorNombre: user ? `${user.nombre} ${user.apellido}` : 'Vecino',
-          autorBarrio: user?.barrio || 'Mi Barrio'
+          autorBarrio: user?.barrio || 'Los Ángeles'
         });
       }
       setCommentText('');
@@ -209,7 +213,7 @@ const PostDetailModal = ({
                 </span>
                 {distanciaCalculada && (
                   <span className="font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Navigation className="w-3 h-3 text-emerald-600" />
+                    <Navigation className="w-3.5 h-3.5 text-emerald-600" />
                     {distanciaCalculada}
                   </span>
                 )}
@@ -231,7 +235,7 @@ const PostDetailModal = ({
             </h2>
           </div>
 
-          {/* Descripción Completa */}
+          {/* Descripción */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
               Descripción e Información Esencial
@@ -241,7 +245,7 @@ const PostDetailModal = ({
             </p>
           </div>
 
-          {/* Mapa de Ubicación */}
+          {/* Mapa de Ubicación del Post (Huacho) */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
@@ -249,11 +253,11 @@ const PostDetailModal = ({
                 <span>Ubicación en el Barrio</span>
               </h3>
               <span className="text-xs font-semibold text-emerald-700">
-                {currentPost.autor?.barrio || currentPost.autor?.ciudad || 'Mi Barrio'}
+                {currentPost.autor?.barrio || 'Los Ángeles'}, {currentPost.autor?.ciudad || 'Huacho'}
               </span>
             </div>
 
-            <div className="w-full h-44 sm:h-52 rounded-xl overflow-hidden border-2 border-emerald-600/30 shadow-inner relative z-10">
+            <div className="w-full h-48 sm:h-56 rounded-xl overflow-hidden border-2 border-emerald-600/30 shadow-inner relative z-10">
               <MapContainer
                 center={[lat, lng]}
                 zoom={16}
@@ -264,7 +268,7 @@ const PostDetailModal = ({
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <RecenterMap lat={lat} lng={lng} />
+                <RecenterModalMap lat={lat} lng={lng} />
                 <Marker position={[lat, lng]} icon={detailPinIcon}>
                   <Popup>
                     <div className="text-xs font-bold text-slate-900">
@@ -324,7 +328,6 @@ const PostDetailModal = ({
                 </div>
               </div>
 
-              {/* Formulario de Estrellas y Comentarios */}
               <form
                 onSubmit={handleCommentSubmit}
                 className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3"
@@ -381,7 +384,6 @@ const PostDetailModal = ({
                 </div>
               </form>
 
-              {/* Lista de Reseñas */}
               {comentarios.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">
                   Aún no hay reseñas. ¡Sé el primer vecino en dejar tu calificación!
@@ -397,7 +399,7 @@ const PostDetailModal = ({
                         <span className="font-bold text-xs text-slate-900">
                           {c.autorNombre || 'Vecino'}{' '}
                           <span className="font-normal text-slate-500">
-                            • {c.autorBarrio || 'Vecino del Barrio'}
+                            • {c.autorBarrio || 'Los Ángeles'}
                           </span>
                         </span>
                         <div className="flex items-center gap-0.5">
@@ -442,7 +444,7 @@ const PostDetailModal = ({
                     type="text"
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Ej. Muchas gracias por tu ayuda, ¿podemos coordinar la entrega al chat interno?"
+                    placeholder="Ej. Muchas gracias, ¿podemos coordinar la entrega por chat?"
                     className="flex-1 h-11 px-3.5 rounded-xl border border-amber-300 text-xs sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-600"
                   />
                   <button
@@ -470,7 +472,7 @@ const PostDetailModal = ({
                       <span className="font-bold text-xs text-slate-900 block">
                         {c.autorNombre || 'Vecino'}{' '}
                         <span className="font-normal text-slate-500">
-                          • {c.autorBarrio || 'Vecino del Barrio'}
+                          • {c.autorBarrio || 'Los Ángeles'}
                         </span>
                       </span>
                       <p className="text-xs sm:text-sm text-slate-700 leading-relaxed break-words">
@@ -484,7 +486,7 @@ const PostDetailModal = ({
           )}
         </div>
 
-        {/* Pie con Acciones Directas */}
+        {/* Pie de Acciones Directas */}
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
           {onEndorse && (
             <button

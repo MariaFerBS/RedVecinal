@@ -43,7 +43,7 @@ const calcularDistanciaInfo = (lat1, lon1, lat2, lon2) => {
   return { metros, texto };
 };
 
-const RADIO_MAXIMO_SOS = 1000; // 1 km estricto
+const RADIO_MAXIMO_SOS = 1500; // 1.5 km estricto
 
 const ModoEmergencia = () => {
   const {
@@ -55,7 +55,6 @@ const ModoEmergencia = () => {
     resolveAlert
   } = useEmergencia();
 
-  // Coordenadas directamente de AuthContext (actualizadas por el GPS real)
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -66,6 +65,7 @@ const ModoEmergencia = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [chatNeighbor, setChatNeighbor] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [newAlert, setNewAlert] = useState({
     tipo: 'Necesito ayuda',
@@ -107,36 +107,67 @@ const ModoEmergencia = () => {
     return false;
   };
 
-  // Crear la alerta usando EXACTAMENTE la ubicación que AuthContext ya detectó
+  // Obtener GPS real al instante antes de enviar a MongoDB
+  const capturarCoordenadasActuales = () => {
+    return new Promise((resolve) => {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve([pos.coords.longitude, pos.coords.latitude]);
+          },
+          (err) => {
+            console.warn('GPS instantáneo falló, recurriendo al usuario:', err.message);
+            if (userLng && userLat) {
+              resolve([userLng, userLat]);
+            } else {
+              resolve([-77.1350, -12.0620]);
+            }
+          },
+          { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+        );
+      } else {
+        if (userLng && userLat) {
+          resolve([userLng, userLat]);
+        } else {
+          resolve([-77.1350, -12.0620]);
+        }
+      }
+    });
+  };
+
   const handleCreateAlert = async (e) => {
     e.preventDefault();
-    if (!newAlert.titulo.trim() || !newAlert.descripcion.trim()) return;
+    if (!newAlert.titulo.trim() || !newAlert.descripcion.trim() || isSubmitting) return;
 
-    // Tomamos la coordenada de AuthContext (GeoJSON [lng, lat])
-    const coordsFinales = (userLng && userLat)
-      ? [userLng, userLat]
-      : [-77.1350, -12.0620];
+    try {
+      setIsSubmitting(true);
+      const coordsReales = await capturarCoordenadasActuales();
 
-    await addAlert({
-      ...newAlert,
-      autor: user?._id || null,
-      nombreContacto: user
-        ? `${user.nombre} ${user.apellido}`
-        : 'Vecino del Barrio',
-      ubicacion: {
-        type: 'Point',
-        coordinates: coordsFinales
-      },
-      activo: true
-    });
+      await addAlert({
+        ...newAlert,
+        autor: user?._id || null,
+        nombreContacto: user
+          ? `${user.nombre} ${user.apellido}`
+          : 'Vecino del Barrio',
+        ubicacion: {
+          type: 'Point',
+          coordinates: coordsReales // [lng, lat] GeoJSON estricto
+        },
+        activo: true
+      });
 
-    setNewAlert({
-      tipo: 'Necesito ayuda',
-      categoria: 'salud',
-      titulo: '',
-      descripcion: ''
-    });
-    setShowShareModal(false);
+      setNewAlert({
+        tipo: 'Necesito ayuda',
+        categoria: 'salud',
+        titulo: '',
+        descripcion: ''
+      });
+      setShowShareModal(false);
+    } catch (err) {
+      console.error('Error al emitir alerta SOS:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleMarcarSolucionado = async (alertId) => {
@@ -150,7 +181,7 @@ const ModoEmergencia = () => {
     }
   };
 
-  // Filtrado a 1 km usando el userLat y userLng de AuthContext
+  // Filtrado hiperlocal estricto
   const filteredAlerts = alerts.filter((a) => {
     if (a.activo === false) return false;
     if (filterType !== 'Todas' && a.tipo !== filterType) return false;
@@ -190,7 +221,7 @@ const ModoEmergencia = () => {
                 Modo Emergencia / SOS Activo
               </h1>
               <p className="text-xs sm:text-sm text-slate-600">
-                Mostrando alertas comunitarias a menos de 1 km de tu ubicación detectada.
+                Mostrando alertas comunitarias a menos de 1.5 km de tu ubicación detectada.
               </p>
             </div>
 
@@ -204,7 +235,7 @@ const ModoEmergencia = () => {
             </button>
           </div>
 
-          {/* Marcado telefónico */}
+          {/* Marcado telefónico directo */}
           <div className="mt-5 pt-5 border-t border-slate-100">
             <p className="text-xs font-extrabold uppercase tracking-wider text-slate-700 mb-3">
               📞 Líneas Oficiales de Auxilio a Un Toque (Sin Internet):
@@ -291,7 +322,7 @@ const ModoEmergencia = () => {
         {filteredAlerts.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center border-2 border-red-200 shadow-sm">
             <CheckCircle className="w-12 h-12 text-emerald-600 mx-auto mb-2" />
-            <h3 className="font-black text-lg text-slate-900">Sin emergencias activas en tu radio (1 km)</h3>
+            <h3 className="font-black text-lg text-slate-900">Sin emergencias activas en tu radio (1.5 km)</h3>
             <p className="text-sm text-slate-600 mt-1">
               No se han reportado situaciones de auxilio pendientes en tu zona inmediata.
             </p>
@@ -429,7 +460,7 @@ const ModoEmergencia = () => {
                 <h3 className="font-black text-lg">Compartir Alerta Barrial Rápida</h3>
                 <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Tu ubicación detectada será vinculada a la alerta</span>
+                  <span>Tu ubicación GPS actual será vinculada a la alerta</span>
                 </p>
               </div>
               <button
@@ -517,9 +548,10 @@ const ModoEmergencia = () => {
 
               <button
                 type="submit"
-                className="w-full h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm shadow-md transition"
+                disabled={isSubmitting}
+                className="w-full h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm shadow-md transition disabled:opacity-50"
               >
-                Publicar Alerta Ahora
+                {isSubmitting ? 'Detectando GPS y Publicando...' : 'Publicar Alerta Ahora'}
               </button>
             </form>
           </div>

@@ -48,7 +48,25 @@ const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
   return `a ${(metros / 1000).toFixed(1)} km`;
 };
 
-// SUBCATEGORÍAS EN CASCADA SEGÚN EL TIPO ELEGIDO (Exclusivo para economía y favores cotidianos)
+// Retorna los metros numéricos exactos para comparar el radio de corte
+const obtenerMetrosDistancia = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  const R = 6371e3;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+};
+
+// Radio máximo de corte para disparar el banner de alerta en Home (1.5 km)
+const RADIO_MAXIMO_BANNER_METROS = 1500;
+
+// Subcategorías en cascada para economía y favores
 const SUBCATEGORIAS_MAP = {
   servicio: [
     'Gasfitería y Electricidad',
@@ -102,12 +120,25 @@ const Home = () => {
   const userLat = user?.ubicacion?.coordinates?.[1];
   const userLng = user?.ubicacion?.coordinates?.[0];
 
-  // Filtramos EXCLUSIVAMENTE las alertas de 'Necesito ayuda' que estén activas
+  // FILTRO ESTRICTO: Solo alertas 'Necesito ayuda' que se encuentren a <= 1.5 km del usuario
   const alertaUrgente = Array.isArray(alerts)
-    ? alerts.find((a) => (a.tipo === 'Necesito ayuda' || a.tipo === 'sos') && a.activo !== false)
+    ? alerts.find((a) => {
+        const esUrgente = (a.tipo === 'Necesito ayuda' || a.tipo === 'sos') && a.activo !== false;
+        if (!esUrgente) return false;
+
+        const alertLng = a.ubicacion?.coordinates?.[0];
+        const alertLat = a.ubicacion?.coordinates?.[1];
+
+        if (userLat && userLng && alertLat && alertLng) {
+          const distancia = obtenerMetrosDistancia(userLat, userLng, alertLat, alertLng);
+          return distancia <= RADIO_MAXIMO_BANNER_METROS;
+        }
+
+        // Si aún no hay GPS disponible, no saturar la pantalla con alertas lejanas
+        return false;
+      })
     : null;
 
-  // Distancia calculada en tiempo real hacia la alerta de socorro
   const distanciaAlertaSos = alertaUrgente
     ? calcularDistanciaReal(
         userLat,
@@ -136,11 +167,9 @@ const Home = () => {
     });
   };
 
-  // FILTRO ESTRICTO: El Home SOLO muestra economía barrial, oficios, emprendimientos y favores cotidianos. 
   const filteredPosts = posts.filter((post) => {
     const textoCompleto = `${post.titulo} ${post.descripcion}`.toLowerCase();
     const esEmergenciaVital =
-      textoCompleto.includes('urgente') ||
       textoCompleto.includes('oxígeno') ||
       textoCompleto.includes('insulina') ||
       textoCompleto.includes('emergencia');
@@ -181,7 +210,7 @@ const Home = () => {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 pt-5 pb-24">
-      {/* NOTIFICACIÓN ROJA DE SOS - SOLO SI HAY "NECESITO AYUDA" */}
+      {/* NOTIFICACIÓN ROJA DE SOS - SOLO SI HAY UNA EMERGENCIA REAL EN MENOS DE 1.5 KM */}
       {alertaUrgente && (
         <div className="mb-4 p-4 rounded-2xl bg-red-600 text-white shadow-lg border-2 border-red-500 animate-pulse flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -214,7 +243,7 @@ const Home = () => {
         </div>
       )}
 
-      {/* Hero Contextual Original (Verde y Blanco) */}
+      {/* Hero Contextual */}
       <div
         className={`rounded-2xl p-4 sm:p-6 mb-6 border shadow-md transition-colors ${
           isEmergencyActive
@@ -227,7 +256,7 @@ const Home = () => {
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-sm">
               <MapPin className="w-3.5 h-3.5" />
               <span>
-                Barrio {user?.barrio || 'Guardia Chalaca'} • Radio activo 500m
+                Barrio {user?.barrio || 'Tu Comunidad'} • Radio activo 500m
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-black leading-tight break-words">
@@ -333,7 +362,7 @@ const Home = () => {
         </Link>
       </div>
 
-      {/* Grilla de Tarjetas Vecinales (Blanco y colores normales) */}
+      {/* Grilla de Tarjetas Vecinales */}
       {filteredPosts.length === 0 ? (
         <div
           className={`rounded-2xl p-8 text-center border ${
@@ -351,11 +380,9 @@ const Home = () => {
           {filteredPosts.map((post) => {
             const isSaved = savedPostIds.includes(post._id);
 
-            // Coordenadas del post
             const postLng = post.ubicacion?.coordinates?.[0];
             const postLat = post.ubicacion?.coordinates?.[1];
 
-            // Distancia calculada en tiempo real
             const distanciaCalculada = calcularDistanciaReal(
               userLat,
               userLng,
@@ -511,7 +538,7 @@ const Home = () => {
         </div>
       )}
 
-      {/* Modal para Crear Publicación en Cascada */}
+      {/* Modal para Crear Publicación */}
       {showCreateModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm overflow-y-auto"
@@ -583,7 +610,7 @@ const Home = () => {
                     setNewPost({ ...newPost, titulo: e.target.value })
                   }
                   className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm"
-                  placeholder="Ej. Venta de agua purificada y hielo en cubos"
+                  placeholder="Ej. Gasfitería y cambio de griferías"
                 />
               </div>
 
@@ -616,7 +643,7 @@ const Home = () => {
                       setNewPost({ ...newPost, precio: e.target.value })
                     }
                     className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm"
-                    placeholder="Ej. 10"
+                    placeholder="Ej. 15"
                   />
                 </div>
               )}

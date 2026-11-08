@@ -8,7 +8,6 @@ export const AuthProvider = ({ children }) => {
     const saved = localStorage.getItem('rv_user');
     if (!saved) return null;
     const parsed = JSON.parse(saved);
-    // Limpieza automática si existía un usuario viejo de prueba
     if (parsed?.barrio === 'Santa Beatriz' || parsed?._id === 'vecino_local_1') {
       localStorage.removeItem('rv_user');
       return null;
@@ -20,7 +19,6 @@ export const AuthProvider = ({ children }) => {
     const saved = localStorage.getItem('rv_posts_cache');
     if (!saved) return [];
     const parsed = JSON.parse(saved);
-    // Limpieza si el caché tenía los posts de demostración de Santa Beatriz
     if (Array.isArray(parsed) && parsed.some((p) => p.autor?.barrio === 'Santa Beatriz')) {
       localStorage.removeItem('rv_posts_cache');
       return [];
@@ -37,7 +35,6 @@ export const AuthProvider = ({ children }) => {
 
   const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
 
-  // Limpiar cualquier residuo viejo en localStorage al montar
   useEffect(() => {
     const cachedPosts = localStorage.getItem('rv_posts_cache');
     if (cachedPosts && cachedPosts.includes('Santa Beatriz')) {
@@ -79,42 +76,39 @@ export const AuthProvider = ({ children }) => {
     fetchPosts();
   }, [user]);
 
-  // Solicitar GPS automáticamente al cargar la aplicación
-    useEffect(() => {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude } = position.coords;
-            console.log('📍 GPS real detectado:', latitude, longitude);
+  // Detección de GPS real al inicio
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
 
-            // 1. Si hay un usuario logueado, le asignamos sus coordenadas reales
-            setUser((prevUser) => {
-              if (!prevUser) return prevUser;
-              const updatedUser = {
-                ...prevUser,
-                ubicacion: {
-                  type: 'Point',
-                  coordinates: [longitude, latitude] // [lng, lat] para GeoJSON
-                }
-              };
-              localStorage.setItem('rv_user', JSON.stringify(updatedUser));
-              return updatedUser;
-            });
+          setUser((prevUser) => {
+            if (!prevUser) return prevUser;
+            const updatedUser = {
+              ...prevUser,
+              ubicacion: {
+                type: 'Point',
+                coordinates: [longitude, latitude] // [lng, lat]
+              }
+            };
+            localStorage.setItem('rv_user', JSON.stringify(updatedUser));
+            return updatedUser;
+          });
 
-            // 2. Consultar las publicaciones cercanas usando ese GPS
-            fetchPosts({ lat: latitude, lng: longitude });
-          },
-          (error) => {
-            console.warn('No se autorizó o no se obtuvo el GPS:', error.message);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-          }
-        );
-      }
-    }, []);
+          fetchPosts({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          console.warn('GPS no disponible:', error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+  }, []);
 
   const login = async (email, password) => {
     setLoading(true);
@@ -263,8 +257,8 @@ export const AuthProvider = ({ children }) => {
         toggleSavePost,
         endorseNeighborLocal,
         addCommentToPost,
-        userCoords: user?.ubicacion?.coordinates || null // [lng, lat]
-      }}  
+        userCoords: user?.ubicacion?.coordinates || null
+      }}
     >
       {children}
     </AuthContext.Provider>
