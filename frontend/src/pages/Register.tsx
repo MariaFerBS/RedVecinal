@@ -43,7 +43,7 @@ const Register = () => {
     );
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: { preventDefault: () => void; }) => {
     e.preventDefault();
     setErrorMsg('');
     const result = await register(formData);
