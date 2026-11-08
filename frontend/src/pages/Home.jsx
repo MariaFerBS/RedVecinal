@@ -13,7 +13,9 @@ import {
   HeartHandshake,
   CheckCircle2,
   X,
-  Layers
+  Layers,
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useEmergencia } from '../context/EmergenciaContext';
@@ -46,7 +48,7 @@ const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
   return `a ${(metros / 1000).toFixed(1)} km`;
 };
 
-// SUBCATEGORÍAS EN CASCADA SEGÚN EL TIPO ELEGIDO
+// SUBCATEGORÍAS EN CASCADA SEGÚN EL TIPO ELEGIDO (Exclusivo para economía y favores cotidianos)
 const SUBCATEGORIAS_MAP = {
   servicio: [
     'Gasfitería y Electricidad',
@@ -83,7 +85,7 @@ const Home = () => {
     toggleSavePost,
     endorseNeighborLocal
   } = useAuth();
-  const { isEmergencyActive, activateEmergency, deactivateEmergency } =
+  const { isEmergencyActive, activateEmergency, deactivateEmergency, alerts } =
     useEmergencia();
 
   const location = useLocation();
@@ -99,6 +101,21 @@ const Home = () => {
   // Coordenadas actuales del usuario logueado
   const userLat = user?.ubicacion?.coordinates?.[1];
   const userLng = user?.ubicacion?.coordinates?.[0];
+
+  // Filtramos EXCLUSIVAMENTE las alertas de 'Necesito ayuda' que estén activas
+  const alertaUrgente = Array.isArray(alerts)
+    ? alerts.find((a) => (a.tipo === 'Necesito ayuda' || a.tipo === 'sos') && a.activo !== false)
+    : null;
+
+  // Distancia calculada en tiempo real hacia la alerta de socorro
+  const distanciaAlertaSos = alertaUrgente
+    ? calcularDistanciaReal(
+        userLat,
+        userLng,
+        alertaUrgente.ubicacion?.coordinates?.[1],
+        alertaUrgente.ubicacion?.coordinates?.[0]
+      )
+    : 'Cerca de ti';
 
   const [newPost, setNewPost] = useState({
     tipo: 'servicio',
@@ -119,7 +136,7 @@ const Home = () => {
     });
   };
 
-  // FILTRO: Muestra publicaciones asegurando que no desaparezcan de la pantalla
+  // FILTRO ESTRICTO: El Home SOLO muestra economía barrial, oficios, emprendimientos y favores cotidianos. 
   const filteredPosts = posts.filter((post) => {
     const textoCompleto = `${post.titulo} ${post.descripcion}`.toLowerCase();
     const esEmergenciaVital =
@@ -164,7 +181,40 @@ const Home = () => {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 pt-5 pb-24">
-      {/* Hero Contextual */}
+      {/* NOTIFICACIÓN ROJA DE SOS - SOLO SI HAY "NECESITO AYUDA" */}
+      {alertaUrgente && (
+        <div className="mb-4 p-4 rounded-2xl bg-red-600 text-white shadow-lg border-2 border-red-500 animate-pulse flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-6 h-6 text-yellow-300" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="bg-white text-red-700 text-[10px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider">
+                  🚨 ALERTA SOS ACTIVA EN EL BARRIO
+                </span>
+                <span className="text-xs text-red-100 font-semibold flex items-center gap-0.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {distanciaAlertaSos}
+                </span>
+              </div>
+              <p className="text-sm font-black mt-0.5 leading-snug line-clamp-1">
+                {alertaUrgente.titulo}
+              </p>
+            </div>
+          </div>
+
+          <Link
+            to="/emergencia"
+            className="h-10 px-4 rounded-xl bg-white hover:bg-red-50 text-red-700 font-black text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-md transition"
+          >
+            <span>Ver y Ayudar</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
+
+      {/* Hero Contextual Original (Verde y Blanco) */}
       <div
         className={`rounded-2xl p-4 sm:p-6 mb-6 border shadow-md transition-colors ${
           isEmergencyActive
@@ -177,13 +227,13 @@ const Home = () => {
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-sm">
               <MapPin className="w-3.5 h-3.5" />
               <span>
-                Barrio {user?.barrio || 'Mi Barrio'} • {user?.ciudad || 'Callao'}
+                Barrio {user?.barrio || 'Guardia Chalaca'} • Radio activo 500m
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-black leading-tight break-words">
               {isEmergencyActive
                 ? '🚨 MODO EMERGENCIA ACTIVO EN TU BARRIO'
-                : `¡Hola, ${user?.nombre || 'Vecino'}! Conecta y apoya a tus vecinos`}
+                : `¡Hola, ${user?.nombre}! Conecta y apoya a tus vecinos`}
             </h1>
             <p className="text-xs sm:text-sm opacity-95 leading-relaxed">
               {isEmergencyActive
@@ -279,11 +329,11 @@ const Home = () => {
           }`}
         >
           <MapPin className="w-4 h-4" />
-          <span>Ver Mapa Interactivo</span>
+          <span>Ver Mapa Interactivo (500m)</span>
         </Link>
       </div>
 
-      {/* Grilla de Tarjetas Vecinales */}
+      {/* Grilla de Tarjetas Vecinales (Blanco y colores normales) */}
       {filteredPosts.length === 0 ? (
         <div
           className={`rounded-2xl p-8 text-center border ${
@@ -305,7 +355,7 @@ const Home = () => {
             const postLng = post.ubicacion?.coordinates?.[0];
             const postLat = post.ubicacion?.coordinates?.[1];
 
-            // Distancia calculada en tiempo real contra el GPS del usuario
+            // Distancia calculada en tiempo real
             const distanciaCalculada = calcularDistanciaReal(
               userLat,
               userLng,
@@ -386,7 +436,7 @@ const Home = () => {
                       )}
                     </span>
                     <span
-                      className={`text-xs font-semibold flex items-center gap-1 ${
+                      className={`text-xs flex items-center gap-1 ${
                         isEmergencyActive ? 'text-red-200' : 'text-slate-500'
                       }`}
                     >
@@ -472,7 +522,7 @@ const Home = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-extrabold text-lg flex items-center gap-2">
                 <Layers className="w-5 h-5 text-emerald-600" />
-                <span>Nueva Publicación en {user?.barrio || 'el Barrio'}</span>
+                <span>Nueva Publicación en {user?.barrio}</span>
               </h3>
               <button
                 type="button"
@@ -533,7 +583,7 @@ const Home = () => {
                     setNewPost({ ...newPost, titulo: e.target.value })
                   }
                   className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm"
-                  placeholder="Ej. Reparación de computadoras y redes"
+                  placeholder="Ej. Venta de agua purificada y hielo en cubos"
                 />
               </div>
 

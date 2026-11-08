@@ -10,15 +10,18 @@ import {
   Eye,
   X,
   MessageCircle,
-  Users
+  CheckCircle,
+  UserCheck
 } from 'lucide-react';
 import { useEmergencia } from '../context/EmergenciaContext';
 import { useAuth } from '../context/AuthContext';
 import ChatModal from '../components/ChatModal';
 
-// Función para calcular distancia geográfica real
-const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 'En tu zona';
+// Cálculo geodésico Haversine
+const calcularDistanciaInfo = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) {
+    return { metros: 0, texto: 'En tu zona' };
+  }
 
   const R = 6371e3; // Radio de la Tierra en metros
   const rad = Math.PI / 180;
@@ -36,11 +39,11 @@ const calcularDistanciaReal = (lat1, lon1, lat2, lon2) => {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const metros = Math.round(R * c);
 
-  if (metros < 1000) {
-    return `a ${metros} m`;
-  }
-  return `a ${(metros / 1000).toFixed(1)} km`;
+  const texto = metros < 1000 ? `a ${metros} m` : `a ${(metros / 1000).toFixed(1)} km`;
+  return { metros, texto };
 };
+
+const RADIO_MAXIMO_SOS = 1000; // 1 km estricto
 
 const ModoEmergencia = () => {
   const {
@@ -49,19 +52,20 @@ const ModoEmergencia = () => {
     deactivateEmergency,
     alerts,
     addAlert,
-    confirmAlert
+    resolveAlert
   } = useEmergencia();
+
+  // Coordenadas directamente de AuthContext (actualizadas por el GPS real)
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  const userLng = user?.ubicacion?.coordinates?.[0];
+  const userLat = user?.ubicacion?.coordinates?.[1];
 
   const [filterType, setFilterType] = useState('Todas');
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [chatNeighbor, setChatNeighbor] = useState(null);
-
-  // Coordenadas actuales del usuario logueado
-  const userLat = user?.ubicacion?.coordinates?.[1];
-  const userLng = user?.ubicacion?.coordinates?.[0];
 
   const [newAlert, setNewAlert] = useState({
     tipo: 'Necesito ayuda',
@@ -81,20 +85,49 @@ const ModoEmergencia = () => {
     navigate('/');
   };
 
+  // Identificar si la alerta fue creada por el usuario activo
+  const esMiAlerta = (alert) => {
+    if (!user || !alert) return false;
+
+    const autorId =
+      typeof alert.autor === 'object' && alert.autor !== null
+        ? alert.autor._id
+        : alert.autor;
+
+    if (autorId && user._id && String(autorId) === String(user._id)) {
+      return true;
+    }
+
+    const miNombre = `${user.nombre || ''} ${user.apellido || ''}`.trim().toLowerCase();
+    const contacto = (alert.nombreContacto || '').trim().toLowerCase();
+    if (miNombre && contacto && miNombre === contacto) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Crear la alerta usando EXACTAMENTE la ubicación que AuthContext ya detectó
   const handleCreateAlert = async (e) => {
     e.preventDefault();
     if (!newAlert.titulo.trim() || !newAlert.descripcion.trim()) return;
 
-    // Enviar alerta con la ubicación del usuario
+    // Tomamos la coordenada de AuthContext (GeoJSON [lng, lat])
+    const coordsFinales = (userLng && userLat)
+      ? [userLng, userLat]
+      : [-77.1350, -12.0620];
+
     await addAlert({
       ...newAlert,
+      autor: user?._id || null,
       nombreContacto: user
         ? `${user.nombre} ${user.apellido}`
         : 'Vecino del Barrio',
-      ubicacion: user?.ubicacion || {
+      ubicacion: {
         type: 'Point',
-        coordinates: [-77.1350, -12.0620]
-      }
+        coordinates: coordsFinales
+      },
+      activo: true
     });
 
     setNewAlert({
@@ -106,21 +139,46 @@ const ModoEmergencia = () => {
     setShowShareModal(false);
   };
 
-  const handleConfirmIncidentLocal = (alertId) => {
-    if (confirmAlert) {
-      confirmAlert(alertId, user);
+  const handleMarcarSolucionado = async (alertId) => {
+    if (window.confirm('¿Confirmas que tu alerta SOS ya fue atendida y deseas darla de baja?')) {
+      if (resolveAlert) {
+        await resolveAlert(alertId);
+      }
+      if (selectedAlert?._id === alertId) {
+        setSelectedAlert(null);
+      }
     }
   };
 
+  // Filtrado a 1 km usando el userLat y userLng de AuthContext
   const filteredAlerts = alerts.filter((a) => {
-    if (filterType === 'Todas') return true;
-    return a.tipo === filterType;
+    if (a.activo === false) return false;
+    if (filterType !== 'Todas' && a.tipo !== filterType) return false;
+
+    // Las propias alertas nunca se ocultan al autor
+    if (esMiAlerta(a)) return true;
+
+    const alertLng = a.ubicacion?.coordinates?.[0];
+    const alertLat = a.ubicacion?.coordinates?.[1];
+
+    if (userLat && userLng && alertLat && alertLng) {
+      const { metros } = calcularDistanciaInfo(
+        userLat,
+        userLng,
+        alertLat,
+        alertLng
+      );
+      if (metros > RADIO_MAXIMO_SOS) {
+        return false;
+      }
+    }
+    return true;
   });
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-red-50/70 text-slate-900 pb-24">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-5">
-        {/* Cabecera de Mando */}
+        {/* Cabecera */}
         <div className="bg-white border-2 border-red-200 rounded-2xl p-4 sm:p-6 mb-6 shadow-md">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
@@ -132,7 +190,7 @@ const ModoEmergencia = () => {
                 Modo Emergencia / SOS Activo
               </h1>
               <p className="text-xs sm:text-sm text-slate-600">
-                Marcado telefónico directo y coordinación comunitaria en tiempo real con respaldo vecinal.
+                Mostrando alertas comunitarias a menos de 1 km de tu ubicación detectada.
               </p>
             </div>
 
@@ -146,7 +204,7 @@ const ModoEmergencia = () => {
             </button>
           </div>
 
-          {/* Botonera de Marcado Telefónico Directo */}
+          {/* Marcado telefónico */}
           <div className="mt-5 pt-5 border-t border-slate-100">
             <p className="text-xs font-extrabold uppercase tracking-wider text-slate-700 mb-3">
               📞 Líneas Oficiales de Auxilio a Un Toque (Sin Internet):
@@ -197,7 +255,7 @@ const ModoEmergencia = () => {
           </div>
         </div>
 
-        {/* Filtros + Botón Compartir */}
+        {/* Filtros + Botón Crear Alerta */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div className="flex flex-wrap items-center gap-2">
             {['Todas', 'Necesito ayuda', 'Ofrezco ayuda'].map((filtro) => {
@@ -230,85 +288,132 @@ const ModoEmergencia = () => {
         </div>
 
         {/* Grilla de Alertas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAlerts.map((alert) => {
-            const isNeed = alert.tipo === 'Necesito ayuda';
+        {filteredAlerts.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center border-2 border-red-200 shadow-sm">
+            <CheckCircle className="w-12 h-12 text-emerald-600 mx-auto mb-2" />
+            <h3 className="font-black text-lg text-slate-900">Sin emergencias activas en tu radio (1 km)</h3>
+            <p className="text-sm text-slate-600 mt-1">
+              No se han reportado situaciones de auxilio pendientes en tu zona inmediata.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredAlerts.map((alert) => {
+              const isNeed = alert.tipo === 'Necesito ayuda';
+              const propia = esMiAlerta(alert);
 
-            // Coordenadas de la alerta
-            const alertLng = alert.ubicacion?.coordinates?.[0];
-            const alertLat = alert.ubicacion?.coordinates?.[1];
+              const alertLng = alert.ubicacion?.coordinates?.[0];
+              const alertLat = alert.ubicacion?.coordinates?.[1];
 
-            // Distancia calculada en tiempo real
-            const distanciaTexto = calcularDistanciaReal(
-              userLat,
-              userLng,
-              alertLat,
-              alertLng
-            );
+              const { texto: distanciaTexto } = calcularDistanciaInfo(
+                userLat,
+                userLng,
+                alertLat,
+                alertLng
+              );
 
-            return (
-              <article
-                key={alert._id}
-                className={`rounded-2xl p-5 border-2 flex flex-col justify-between shadow-sm transition bg-white ${
-                  isNeed ? 'border-red-300' : 'border-emerald-300'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span
-                      className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide border ${
-                        isNeed
-                          ? 'bg-red-50 text-red-800 border-red-200'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      }`}
-                    >
-                      {isNeed ? '🆘 NECESITO AYUDA' : '🤝 OFREZCO AYUDA'}
-                    </span>
+              return (
+                <article
+                  key={alert._id}
+                  className={`rounded-2xl p-5 border-2 flex flex-col justify-between shadow-sm transition bg-white ${
+                    isNeed ? 'border-red-300' : 'border-emerald-300'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide border ${
+                            isNeed
+                              ? 'bg-red-50 text-red-800 border-red-200'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          }`}
+                        >
+                          {isNeed ? '🆘 NECESITO AYUDA' : '🤝 OFREZCO AYUDA'}
+                        </span>
 
-                    <span className="text-xs font-bold text-slate-600 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
-                      <MapPin className="w-3.5 h-3.5 text-red-600" />
-                      {distanciaTexto}
-                    </span>
+                        {propia && (
+                          <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[11px] font-black border border-blue-200 flex items-center gap-1">
+                            <UserCheck className="w-3 h-3" /> Tu Alerta
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="text-xs font-bold text-slate-600 flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-md">
+                        <MapPin className="w-3.5 h-3.5 text-red-600" />
+                        {distanciaTexto}
+                      </span>
+                    </div>
+
+                    <h2 className="font-black text-lg leading-snug mb-2 text-slate-900 break-words">
+                      {alert.titulo}
+                    </h2>
+
+                    <p className="text-sm text-slate-600 leading-relaxed mb-3 break-words">
+                      {alert.descripcion}
+                    </p>
                   </div>
 
-                  <h2 className="font-black text-lg leading-snug mb-2 text-slate-900 break-words">
-                    {alert.titulo}
-                  </h2>
+                  <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">
+                          {alert.nombreContacto || 'Vecino del Barrio'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>Categoría: {alert.categoria || 'general'}</span>
+                        </p>
+                      </div>
 
-                  <p className="text-sm text-slate-600 leading-relaxed mb-3 break-words">
-                    {alert.descripcion}
-                  </p>
-                </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedAlert({
+                            ...alert,
+                            distanciaCalculada: distanciaTexto,
+                            esPropia: propia
+                          })
+                        }
+                        className="h-10 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs flex items-center gap-1.5 shrink-0 transition"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>Ver detalle</span>
+                      </button>
+                    </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-900 truncate">
-                      {alert.nombreContacto || 'Vecino del Barrio'}
-                    </p>
-                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>Categoría: {alert.categoria || 'general'}</span>
-                    </p>
+                    {propia ? (
+                      <button
+                        type="button"
+                        onClick={() => handleMarcarSolucionado(alert._id)}
+                        className="w-full h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Marcar como Solucionada / Cerrar</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const contactName = alert.nombreContacto || 'Vecino en Alerta';
+                          setChatNeighbor({
+                            nombre: contactName,
+                            apellido: '',
+                            barrio: user?.barrio || 'Mi Barrio'
+                          });
+                        }}
+                        className="w-full h-9 rounded-xl bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-red-600" />
+                        <span>Coordinar Ayuda con este Vecino</span>
+                      </button>
+                    )}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedAlert({
-                        ...alert,
-                        distanciaCalculada: distanciaTexto
-                      })
-                    }
-                    className="h-11 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs flex items-center gap-1.5 shrink-0 transition"
-                  >
-                    <Eye className="w-4 h-4" />
-                    <span>Ver alerta</span>
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Modal Compartir Alerta */}
@@ -320,7 +425,13 @@ const ModoEmergencia = () => {
         >
           <div className="w-full max-w-md bg-white text-slate-900 border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-2xl my-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-lg">Compartir Alerta Barrial Rápida</h3>
+              <div>
+                <h3 className="font-black text-lg">Compartir Alerta Barrial Rápida</h3>
+                <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Tu ubicación detectada será vinculada a la alerta</span>
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowShareModal(false)}
@@ -453,14 +564,7 @@ const ModoEmergencia = () => {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedAlert(null)}
-                className="h-11 px-4 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs"
-              >
-                Cerrar
-              </button>
+            <div className="space-y-2">
               <button
                 type="button"
                 onClick={() => {
@@ -472,11 +576,22 @@ const ModoEmergencia = () => {
                     barrio: user?.barrio || 'Mi Barrio'
                   });
                 }}
-                className="flex-1 h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2"
+                className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2"
               >
                 <MessageCircle className="w-4 h-4" />
                 <span>Coordinar Ayuda por Chat</span>
               </button>
+
+              {selectedAlert.esPropia && (
+                <button
+                  type="button"
+                  onClick={() => handleMarcarSolucionado(selectedAlert._id)}
+                  className="w-full h-11 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-xs sm:text-sm flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>Marcar mi Alerta como Solucionada</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -262,8 +262,9 @@ export const AuthProvider = ({ children }) => {
         createNewPost,
         toggleSavePost,
         endorseNeighborLocal,
-        addCommentToPost
-      }}
+        addCommentToPost,
+        userCoords: user?.ubicacion?.coordinates || null // [lng, lat]
+      }}  
     >
       {children}
     </AuthContext.Provider>

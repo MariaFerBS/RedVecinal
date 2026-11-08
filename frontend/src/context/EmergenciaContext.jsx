@@ -71,6 +71,28 @@ export const EmergenciaProvider = ({ children }) => {
     localStorage.setItem('rv_emergency_mode', 'true');
   };
 
+  // Función para marcar como resuelta / desactivar una alerta
+  const resolveAlert = async (alertId) => {
+    try {
+      // Si tu backend tiene ruta PUT o PATCH para actualizar
+      await axios.patch(`${apiUrl}/alerts/${alertId}`, { activo: false });
+    } catch (error) {
+      console.warn('Actualizando localmente la alerta:', error.message);
+    }
+
+    // Quitar la alerta del estado y de la caché para que desaparezca de inmediato
+    const updated = alerts.filter((a) => a._id !== alertId);
+    setAlerts(updated);
+    localStorage.setItem('rv_alerts_cache', JSON.stringify(updated));
+
+    // Si ya no quedan alertas urgentes activas, apagar el modo SOS
+    const quedanUrgentes = updated.some((a) => a.tipo === 'Necesito ayuda' && a.activo !== false);
+    if (!quedanUrgentes) {
+      setIsEmergencyActive(false);
+      localStorage.setItem('rv_emergency_mode', 'false');
+    }
+  };
+
   const deactivateEmergency = () => {
     setIsEmergencyActive(false);
     localStorage.setItem('rv_emergency_mode', 'false');
@@ -109,6 +131,7 @@ export const EmergenciaProvider = ({ children }) => {
         activateEmergency,
         deactivateEmergency,
         alerts,
+        resolveAlert,
         addAlert,
         fetchAlerts
       }}
