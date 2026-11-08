@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -36,6 +36,18 @@ const detailPinIcon = L.divIcon({
   popupAnchor: [0, -28]
 });
 
+// Componente para reubicar la vista del mapa cuando cambien las coordenadas
+function RecenterMap({ lat, lng }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], 16);
+      map.invalidateSize();
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
 const PostDetailModal = ({
   isOpen,
   onClose,
@@ -43,7 +55,7 @@ const PostDetailModal = ({
   onOpenChat,
   onEndorse
 }) => {
-  const { posts, addCommentToPost } = useAuth();
+  const { posts, addCommentToPost, user } = useAuth();
 
   const [rating, setRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
@@ -64,8 +76,12 @@ const PostDetailModal = ({
         ).toFixed(1)
       : '5.0';
 
-  const lng = currentPost.ubicacion?.coordinates?.[0] ?? -77.1186;
-  const lat = currentPost.ubicacion?.coordinates?.[1] ?? -12.0565;
+  // Coordenadas tomadas del post o de la ubicación del usuario
+  const fallbackLng = user?.ubicacion?.coordinates?.[0] ?? -77.1186;
+  const fallbackLat = user?.ubicacion?.coordinates?.[1] ?? -12.0565;
+
+  const lng = currentPost.ubicacion?.coordinates?.[0] ?? fallbackLng;
+  const lat = currentPost.ubicacion?.coordinates?.[1] ?? fallbackLat;
 
   const formattedDate = currentPost.createdAt
     ? new Date(currentPost.createdAt).toLocaleDateString('es-PE', {
@@ -185,7 +201,7 @@ const PostDetailModal = ({
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-emerald-600" />
-                <span>Ubicación en el Barrio (Radio menor a 500m)</span>
+                <span>Ubicación en el Barrio</span>
               </h3>
               <span className="text-xs font-semibold text-emerald-700">
                 {currentPost.autor?.barrio || currentPost.autor?.ciudad || 'Mi Barrio'}
@@ -203,6 +219,7 @@ const PostDetailModal = ({
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                <RecenterMap lat={lat} lng={lng} />
                 <Marker position={[lat, lng]} icon={detailPinIcon}>
                   <Popup>
                     <div className="text-xs font-bold text-slate-900">
@@ -248,7 +265,7 @@ const PostDetailModal = ({
             </Link>
           </div>
 
-          {/* SECCIÓN CONDICIONAL: ESTRELLAS PARA SERVICIOS/EMPRENDIMIENTOS VS MENSAJES SOLIDARIOS PARA AYUDAS */}
+          {/* SECCIÓN CONDICIONAL: ESTRELLAS VS MENSAJES SOLIDARIOS */}
           {!isSolidario ? (
             <div className="pt-4 border-t border-slate-200 space-y-4">
               <div className="flex items-center justify-between">
@@ -368,7 +385,6 @@ const PostDetailModal = ({
                 </h3>
               </div>
 
-              {/* Formulario solo de texto para coordinar ayuda (sin estrellas) */}
               <form
                 onSubmit={handleCommentSubmit}
                 className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200 space-y-2.5"
@@ -409,7 +425,7 @@ const PostDetailModal = ({
                       <span className="font-bold text-xs text-slate-900 block">
                         {c.autorNombre || 'Vecino'}{' '}
                         <span className="font-normal text-slate-500">
-                          • {c.autorBarrio || 'Santa Beatriz'}
+                          • {c.autorBarrio || 'Vecino del Barrio'}
                         </span>
                       </span>
                       <p className="text-xs sm:text-sm text-slate-700 leading-relaxed break-words">
@@ -456,4 +472,4 @@ const PostDetailModal = ({
   );
 };
 
-export default PostDetailModal; 
+export default PostDetailModal;

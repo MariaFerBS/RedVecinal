@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -65,17 +65,30 @@ const pinSosEmergencia = L.divIcon({
   popupAnchor: [0, -32]
 });
 
+// Componente para reubicar automáticamente la cámara del mapa
+function RecenterMap({ lat, lng }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], 15);
+      map.invalidateSize();
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
 const MiBarrio = () => {
   const { user, posts, endorseNeighborLocal } = useAuth();
   const { isEmergencyActive, alerts } = useEmergencia();
 
   const [filterMap, setFilterMap] = useState('todos');
-  const [selectedMapItem, setSelectedMapItem] = useState(null); // Tarjeta inferior informativa
-  const [selectedPostModal, setSelectedPostModal] = useState(null); // Modal completo de detalle
+  const [selectedMapItem, setSelectedMapItem] = useState(null);
+  const [selectedPostModal, setSelectedPostModal] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
 
-  const centerLat = -12.0464;
-  const centerLng = -77.0428;
+  // Coordenadas dinámicas basadas en el usuario logueado o fallback neutral
+  const centerLat = user?.ubicacion?.coordinates?.[1] ?? -12.0565;
+  const centerLng = user?.ubicacion?.coordinates?.[0] ?? -77.1186;
 
   const getPinIcon = (tipo) => {
     switch (tipo) {
@@ -111,7 +124,7 @@ const MiBarrio = () => {
     }
 
     if (filterMap === 'todos' || filterMap === 'sos') {
-      alerts.forEach((a) => {
+      (alerts || []).forEach((a) => {
         const lat = a.ubicacion?.coordinates?.[1] || centerLat + (Math.random() - 0.5) * 0.005;
         const lng = a.ubicacion?.coordinates?.[0] || centerLng + (Math.random() - 0.5) * 0.005;
         items.push({
@@ -125,7 +138,7 @@ const MiBarrio = () => {
             _id: a.autor || 'sos_user',
             nombre: a.nombreContacto || 'Vecino en Emergencia',
             apellido: '',
-            barrio: user?.barrio || 'Santa Beatriz',
+            barrio: user?.barrio || user?.ciudad || 'Mi Barrio',
             vistoBuenoCount: 1
           },
           mapType: 'sos',
@@ -176,10 +189,10 @@ const MiBarrio = () => {
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900">
               <MapPin className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Geolocalización Hiperlocal (Radio 500m)</span>
+              <span>Geolocalización Hiperlocal</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-              Mapa Interactivo del Barrio ({user?.barrio || 'Santa Beatriz'})
+              Mapa Interactivo del Barrio ({user?.barrio || user?.ciudad || 'Mi Barrio'})
             </h1>
             <p className="text-xs sm:text-sm opacity-85">
               Haz clic en cualquier pin del mapa para ver la información detallada abajo.
@@ -224,8 +237,10 @@ const MiBarrio = () => {
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}	/{x}/{y}.png"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
+
+            <RecenterMap lat={centerLat} lng={centerLng} />
 
             {mapItems.map((item) => (
               <Marker
@@ -302,7 +317,7 @@ const MiBarrio = () => {
                       onClick={() => endorseNeighborLocal(selectedMapItem.autor?._id)}
                       className="h-11 px-3.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1 transition"
                     >
-                      <ThumbsUp className="w-3.5 h-3.5" />
+                      <ThumbsUp className="w-4 h-4" />
                       <span>Avalar</span>
                     </button>
 
