@@ -37,6 +37,8 @@ const PerfilPublico = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+
   const [editForm, setEditForm] = useState({
     nombre: '',
     apellido: '',
@@ -44,7 +46,9 @@ const PerfilPublico = () => {
     barrio: '',
     codigoManzana: '',
     telefono: '',
-    bio: ''
+    bio: '',
+    lat: null,
+    lng: null
   });
 
   const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
@@ -57,25 +61,28 @@ const PerfilPublico = () => {
         apellido: user.apellido,
         email: user.email,
         telefono: user.telefono || '',
-        barrio: user.barrio,
-        ciudad: user.ciudad || 'Lima',
+        barrio: user.barrio || 'Mi Barrio',
+        ciudad: user.ciudad || 'Callao',
         codigoManzana: user.codigoManzana || '',
         estadoVerificacion: user.estadoVerificacion || 'pendiente',
-        vistoBuenoCount: user.vistoBuenoCount || 12,
+        vistoBuenoCount: user.vistoBuenoCount || 1,
         bio:
           user.bio ||
-          'Vecino activo comprometido con el bienestar y apoyo mutuo del barrio.'
+          'Vecino activo comprometido con el bienestar y apoyo mutuo del barrio.',
+        ubicacion: user.ubicacion
       });
       setEditForm({
         nombre: user.nombre || '',
         apellido: user.apellido || '',
-        ciudad: user.ciudad || 'Lima',
-        barrio: user.barrio || '',
+        ciudad: user.ciudad || 'Callao',
+        barrio: user.barrio || 'Guardia Chalaca',
         codigoManzana: user.codigoManzana || '',
         telefono: user.telefono || '',
         bio:
           user.bio ||
-          'Vecino activo comprometido con el bienestar y apoyo mutuo del barrio.'
+          'Vecino activo comprometido con el bienestar y apoyo mutuo del barrio.',
+        lat: user.ubicacion?.coordinates?.[1] || null,
+        lng: user.ubicacion?.coordinates?.[0] || null
       });
       setNeighborPosts(posts.filter((p) => p.autor?._id === user._id));
       return;
@@ -94,11 +101,11 @@ const PerfilPublico = () => {
         } else {
           setProfile({
             _id: id,
-            nombre: 'Carlos',
-            apellido: 'Mendoza',
-            barrio: 'Santa Beatriz',
-            ciudad: 'Lima',
-            vistoBuenoCount: 28,
+            nombre: 'Vecino',
+            apellido: 'Comunitario',
+            barrio: 'Guardia Chalaca',
+            ciudad: 'Callao',
+            vistoBuenoCount: 5,
             bio: 'Vecino verificado y colaborador activo de la comunidad barrial.'
           });
           setNeighborPosts(posts.slice(0, 2));
@@ -108,13 +115,45 @@ const PerfilPublico = () => {
     loadProfile();
   }, [id, isOwnProfile, user, posts, apiUrl]);
 
-  if (!profile) return null;
+  // Función de GPS en el scope correcto del componente
+  const obtenerUbicacionGPS = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no cuenta con soporte para GPS.');
+      return;
+    }
 
-  const initials = `${profile.nombre?.[0] || 'V'}${
-    profile.apellido?.[0] || ''
-  }`.toUpperCase();
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        setEditForm((prev) => ({
+          ...prev,
+          lat: latitude,
+          lng: longitude
+        }));
+
+        setProfile((prev) => ({
+          ...prev,
+          ubicacion: {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+          }
+        }));
+
+        setGpsLoading(false);
+        alert(`¡Coordenadas GPS obtenidas con éxito!\nLat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`);
+      },
+      (err) => {
+        setGpsLoading(false);
+        alert('Debes permitir el acceso a la ubicación en tu navegador: ' + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const handleEndorse = () => {
+    if (!profile?._id) return;
     endorseNeighborLocal(profile._id);
     setProfile((prev) => ({
       ...prev,
@@ -124,8 +163,7 @@ const PerfilPublico = () => {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    // Evaluar si el código de manzana ingresado es válido para actualizar estado de verificación
-    const codigosValidos = ['MZ-A-2026', 'MZ-B-2026', 'MZ-C-2026', 'URB-SANTA-BEATRIZ'];
+    const codigosValidos = ['MZ-A-2026', 'MZ-B-2026', 'MZ-C-2026', 'URB-CALLAO', 'CHALACA-2026'];
     const esVerificado =
       editForm.codigoManzana &&
       codigosValidos.includes(editForm.codigoManzana.trim().toUpperCase());
@@ -136,39 +174,25 @@ const PerfilPublico = () => {
     };
 
     const res = await updateProfile(payload);
-    if (res.success) {
+    if (res?.success) {
       setProfile((prev) => ({ ...prev, ...payload }));
       setIsEditing(false);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3500);
     }
-
-    const obtenerUbicacionGPS = () => {
-        if (!navigator.geolocation) {
-            alert('Tu navegador no cuenta con soporte para GPS.');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-            const { latitude, longitude } = position.coords;
-            
-            // Actualizas el formulario local del perfil
-            setFormData((prev) => ({
-                ...prev,
-                lat: latitude,
-                lng: longitude
-            }));
-
-            alert('¡Coordenadas GPS obtenidas con éxito!');
-            },
-            (err) => {
-            alert('Debes permitir el acceso a la ubicación en tu navegador: ' + err.message);
-            },
-            { enableHighAccuracy: true }
-        );
-        };
   };
+
+  if (!profile) {
+    return (
+      <div className="w-full max-w-4xl mx-auto px-4 py-16 text-center text-slate-500 font-bold text-sm">
+        Cargando perfil vecinal...
+      </div>
+    );
+  }
+
+  const initials = `${profile.nombre?.[0] || 'V'}${
+    profile.apellido?.[0] || ''
+  }`.toUpperCase();
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 pt-5 pb-24">
@@ -183,7 +207,7 @@ const PerfilPublico = () => {
       {savedSuccess && (
         <div className="mb-4 p-3.5 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-sm">
           <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
-          <span>¡Tus datos personales y código de manzana se actualizaron con éxito!</span>
+          <span>¡Tus datos personales y ubicación se actualizaron con éxito!</span>
         </div>
       )}
 
@@ -229,8 +253,8 @@ const PerfilPublico = () => {
               >
                 <MapPin className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span>
-                  Barrio {profile.barrio || 'Santa Beatriz'},{' '}
-                  {profile.ciudad || 'Lima'}
+                  Barrio {profile.barrio || 'Mi Barrio'},{' '}
+                  {profile.ciudad || 'Callao'}
                 </span>
               </p>
 
@@ -263,13 +287,17 @@ const PerfilPublico = () => {
                 {profile.bio}
               </p>
 
-              <button
-                type="button"
-                onClick={obtenerUbicacionGPS}
-                className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+              {isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={obtenerUbicacionGPS}
+                  disabled={gpsLoading}
+                  className="mt-2 py-2 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
                 >
-                📍 Usar mi ubicación GPS actual
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{gpsLoading ? 'Obteniendo GPS...' : '📍 Usar mi ubicación GPS actual'}</span>
                 </button>
+              )}
             </div>
           </div>
 
@@ -320,14 +348,14 @@ const PerfilPublico = () => {
           </div>
         </div>
 
-        {/* Formulario de Edición con Código de Manzana */}
+        {/* Formulario de Edición */}
         {isOwnProfile && isEditing && (
           <form
             onSubmit={handleSaveProfile}
             className="mt-6 pt-6 border-t border-slate-200 space-y-4"
           >
             <h3 className="font-extrabold text-base text-emerald-800">
-              Actualizar Información de Mi Perfil y Mudanza (Código de Manzana)
+              Actualizar Información de Mi Perfil
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -395,7 +423,7 @@ const PerfilPublico = () => {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-                  Código de Manzana (Mudanza)
+                  Código de Manzana
                 </label>
                 <input
                   type="text"

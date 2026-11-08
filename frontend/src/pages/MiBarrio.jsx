@@ -16,7 +16,8 @@ import {
   Star,
   ThumbsUp,
   X,
-  User
+  User,
+  Navigation
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useEmergencia } from '../context/EmergenciaContext';
@@ -32,7 +33,23 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
 });
 
-// Pines personalizados para el Mapa
+// PIN EXCLUSIVO PARA TU UBICACIÓN (Morado/Violeta con pulso)
+const pinMiUbicacion = L.divIcon({
+  className: 'custom-map-pin-user',
+  html: `
+    <div style="position:relative;display:flex;align-items:center;justify-content:center;width:40px;height:40px;">
+      <div style="position:absolute;width:40px;height:40px;background-color:rgba(147,51,234,0.4);border-radius:9999px;animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
+      <div style="background-color:#9333ea;width:34px;height:34px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 14px rgba(147,51,234,0.6);display:flex;align-items:center;justify-content:center;color:white;font-size:16px;font-weight:900;position:relative;z-index:10;">
+        📍
+      </div>
+    </div>
+  `,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -22]
+});
+
+// Pines de publicaciones
 const pinServicio = L.divIcon({
   className: 'custom-map-pin',
   html: `<div style="background-color:#059669;width:32px;height:32px;border-radius:9999px;border:3px solid #ffffff;box-shadow:0 4px 10px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:14px;font-weight:900;">🔧</div>`,
@@ -65,7 +82,7 @@ const pinSosEmergencia = L.divIcon({
   popupAnchor: [0, -32]
 });
 
-// Componente para reubicar automáticamente la cámara del mapa
+// Componente para reubicar la cámara del mapa
 function RecenterMap({ lat, lng }) {
   const map = useMap();
   useEffect(() => {
@@ -86,9 +103,51 @@ const MiBarrio = () => {
   const [selectedPostModal, setSelectedPostModal] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
 
-  // Coordenadas dinámicas basadas en el usuario logueado o fallback neutral
-  const centerLat = user?.ubicacion?.coordinates?.[1] ?? -12.0565;
-  const centerLng = user?.ubicacion?.coordinates?.[0] ?? -77.1186;
+  // Ubicación en tiempo real del usuario
+  const [miPosicion, setMiPosicion] = useState(() => {
+    const coords = user?.ubicacion?.coordinates;
+    if (coords && coords.length === 2) {
+      return { lat: coords[1], lng: coords[0] };
+    }
+    // Fallback inicial: Guardia Chalaca, Callao
+    return { lat: -12.0620, lng: -77.1350 };
+  });
+
+  // Pedir GPS en cuanto cargue el mapa
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setMiPosicion({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+        },
+        (err) => {
+          console.warn('GPS no disponible:', err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  }, []);
+
+  const handleForzarGPS = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no cuenta con soporte para GPS');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMiPosicion({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        });
+        alert('¡Mapa centrado en tu posición GPS actual!');
+      },
+      (err) => alert('No se pudo obtener el GPS: ' + err.message),
+      { enableHighAccuracy: true }
+    );
+  };
 
   const getPinIcon = (tipo) => {
     switch (tipo) {
@@ -111,8 +170,8 @@ const MiBarrio = () => {
     if (filterMap === 'todos' || filterMap !== 'sos') {
       posts.forEach((p) => {
         if (filterMap === 'todos' || p.tipo === filterMap) {
-          const lat = p.ubicacion?.coordinates?.[1] || centerLat + (Math.random() - 0.5) * 0.005;
-          const lng = p.ubicacion?.coordinates?.[0] || centerLng + (Math.random() - 0.5) * 0.005;
+          const lat = p.ubicacion?.coordinates?.[1] || miPosicion.lat + (Math.random() - 0.5) * 0.005;
+          const lng = p.ubicacion?.coordinates?.[0] || miPosicion.lng + (Math.random() - 0.5) * 0.005;
           items.push({
             ...p,
             mapType: p.tipo,
@@ -125,8 +184,8 @@ const MiBarrio = () => {
 
     if (filterMap === 'todos' || filterMap === 'sos') {
       (alerts || []).forEach((a) => {
-        const lat = a.ubicacion?.coordinates?.[1] || centerLat + (Math.random() - 0.5) * 0.005;
-        const lng = a.ubicacion?.coordinates?.[0] || centerLng + (Math.random() - 0.5) * 0.005;
+        const lat = a.ubicacion?.coordinates?.[1] || miPosicion.lat + (Math.random() - 0.5) * 0.005;
+        const lng = a.ubicacion?.coordinates?.[0] || miPosicion.lng + (Math.random() - 0.5) * 0.005;
         items.push({
           _id: a._id,
           tipo: 'sos',
@@ -195,17 +254,27 @@ const MiBarrio = () => {
               Mapa Interactivo del Barrio ({user?.barrio || user?.ciudad || 'Mi Barrio'})
             </h1>
             <p className="text-xs sm:text-sm opacity-85">
-              Haz clic en cualquier pin del mapa para ver la información detallada abajo.
+              Haz clic en cualquier pin para ver el detalle. Tu posición se muestra con el pin morado 🟣.
             </p>
           </div>
 
-          {/* Filtros del Mapa */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Botón para forzar centrado en tu GPS */}
+            <button
+              type="button"
+              onClick={handleForzarGPS}
+              className="h-10 px-3.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Mi GPS actual</span>
+            </button>
+
+            {/* Filtros */}
             {[
-              { id: 'todos', label: 'Todo en el Mapa' },
-              { id: 'sos', label: '🚨 Alertas SOS' },
+              { id: 'todos', label: 'Todo' },
+              { id: 'sos', label: '🚨 SOS' },
               { id: 'servicio', label: '🔧 Oficios' },
-              { id: 'emprendimiento', label: '🛒 Emprendimientos' },
+              { id: 'emprendimiento', label: '🛒 Negocios' },
               { id: 'solidario', label: '🤝 Favores' }
             ].map((f) => (
               <button
@@ -230,7 +299,7 @@ const MiBarrio = () => {
         {/* Contenedor del Mapa Leaflet */}
         <div className="mt-5 w-full h-[430px] sm:h-[480px] rounded-2xl overflow-hidden border-2 border-emerald-600/30 shadow-inner relative z-10">
           <MapContainer
-            center={[centerLat, centerLng]}
+            center={[miPosicion.lat, miPosicion.lng]}
             zoom={15}
             scrollWheelZoom={true}
             className="w-full h-full"
@@ -240,8 +309,21 @@ const MiBarrio = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            <RecenterMap lat={centerLat} lng={centerLng} />
+            <RecenterMap lat={miPosicion.lat} lng={miPosicion.lng} />
 
+            {/* PIN EXCLUSIVO DE TU UBICACIÓN (COLOR MORADO) */}
+            <Marker position={[miPosicion.lat, miPosicion.lng]} icon={pinMiUbicacion}>
+              <Popup>
+                <div className="text-xs font-bold text-purple-900 p-1">
+                  📍 <strong>¡Estás aquí!</strong>
+                  <span className="block font-normal text-slate-600 text-[11px] mt-0.5">
+                    Tu ubicación actual en el mapa
+                  </span>
+                </div>
+              </Popup>
+            </Marker>
+
+            {/* Pines de publicaciones y alertas */}
             {mapItems.map((item) => (
               <Marker
                 key={item._id}
