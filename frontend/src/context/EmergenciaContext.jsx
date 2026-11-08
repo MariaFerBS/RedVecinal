@@ -3,54 +3,6 @@ import axios from 'axios';
 
 const EmergenciaContext = createContext();
 
-const INITIAL_DEMO_ALERTS = [
-  {
-    _id: 'alert_1',
-    tipo: 'Necesito ayuda',
-    categoria: 'salud',
-    titulo: 'Adulto mayor requiere insulina refrigerada urgente',
-    descripcion:
-      'Por corte eléctrico prolongado en la cuadra 3 perdimos cadena de frío. Necesitamos conservar 2 frascos de insulina o hielo seco.',
-    nombreContacto: 'Familia Vargas (Cuadra 3)',
-    distancia: '120m',
-    ubicacion: {
-      type: 'Point',
-      coordinates: [-77.0432, -12.0458]
-    },
-    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString()
-  },
-  {
-    _id: 'alert_2',
-    tipo: 'Necesito ayuda',
-    categoria: 'salud',
-    titulo: 'Necesito préstamo urgente de balón de oxígeno o concentrador',
-    descripcion:
-      'Para familiar adulto mayor en la cuadra 6 mientras llega la ambulancia del SAMU. Agradezco cualquier apoyo inmediato.',
-    nombreContacto: 'Lucía Paredes (Cuadra 6)',
-    distancia: '95m',
-    ubicacion: {
-      type: 'Point',
-      coordinates: [-77.0439, -12.0449]
-    },
-    createdAt: new Date(Date.now() - 1000 * 60 * 20).toISOString()
-  },
-  {
-    _id: 'alert_3',
-    tipo: 'Ofrezco ayuda',
-    categoria: 'electricidad',
-    titulo: 'Generador eléctrico disponible para equipos médicos y celulares',
-    descripcion:
-      'Tengo grupo electrógeno encendido en el patio común del pasaje Los Pinos. Pueden traer celulares o nebulizadores.',
-    nombreContacto: 'Roberto Cáceres',
-    distancia: '210m',
-    ubicacion: {
-      type: 'Point',
-      coordinates: [-77.0419, -12.0469]
-    },
-    createdAt: new Date(Date.now() - 1000 * 60 * 35).toISOString()
-  }
-];
-
 export const EmergenciaProvider = ({ children }) => {
   const [isEmergencyActive, setIsEmergencyActive] = useState(() => {
     return localStorage.getItem('rv_emergency_mode') === 'true';
@@ -58,10 +10,34 @@ export const EmergenciaProvider = ({ children }) => {
 
   const [alerts, setAlerts] = useState(() => {
     const cached = localStorage.getItem('rv_alerts_cache');
-    return cached ? JSON.parse(cached) : INITIAL_DEMO_ALERTS;
+    if (!cached) return [];
+    try {
+      const parsed = JSON.parse(cached);
+      // Purgar si contiene alertas previas de prueba (alert_1, alert_2, alert_3)
+      if (
+        Array.isArray(parsed) &&
+        parsed.some((a) => a._id === 'alert_1' || a._id === 'alert_2' || a._id === 'alert_3')
+      ) {
+        localStorage.removeItem('rv_alerts_cache');
+        return [];
+      }
+      return parsed;
+    } catch {
+      localStorage.removeItem('rv_alerts_cache');
+      return [];
+    }
   });
 
   const apiUrl = import.meta.env.VITE_API_URL || 'https://redvecinal.onrender.com/api';
+
+  // Limpieza defensiva en el montaje
+  useEffect(() => {
+    const cached = localStorage.getItem('rv_alerts_cache');
+    if (cached && (cached.includes('alert_1') || cached.includes('Familia Vargas'))) {
+      localStorage.removeItem('rv_alerts_cache');
+      setAlerts([]);
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('rv_emergency_mode', String(isEmergencyActive));
@@ -70,14 +46,18 @@ export const EmergenciaProvider = ({ children }) => {
   const fetchAlerts = async () => {
     try {
       const res = await axios.get(`${apiUrl}/alerts`);
-      if (Array.isArray(res.data) && res.data.length > 0) {
+      if (Array.isArray(res.data)) {
         setAlerts(res.data);
         localStorage.setItem('rv_alerts_cache', JSON.stringify(res.data));
       }
     } catch (error) {
       const cached = localStorage.getItem('rv_alerts_cache');
       if (cached) {
-        setAlerts(JSON.parse(cached));
+        try {
+          setAlerts(JSON.parse(cached));
+        } catch {
+          setAlerts([]);
+        }
       }
     }
   };
@@ -112,7 +92,7 @@ export const EmergenciaProvider = ({ children }) => {
       const fallbackAlert = {
         _id: `alert_${Date.now()}`,
         ...alertData,
-        distancia: '85m',
+        distancia: 'Cerca de ti',
         createdAt: new Date().toISOString()
       };
       const updated = [fallbackAlert, ...alerts];
